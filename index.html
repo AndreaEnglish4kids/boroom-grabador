@@ -71,6 +71,7 @@
   const $ = id => document.getElementById(id);
   const show = (id, on) => $(id).classList.toggle('hidden', !on);
   const wait = ms => new Promise(r => setTimeout(r, ms));
+  const dot = t => /\.$/.test(t) ? t : t + '.';   // "4:05 p. m." ya termina en punto
   let INFO = null, S = { state: 'abierta' }, lastErr = '';
 
   async function api(a, extra) {
@@ -97,7 +98,7 @@
       return;
     }
     const prob = browserProblem();
-    setState('', '🎥', 'Activa la grabación de tu room', 'Empieza sola a las ' + INFO.startLabel + ' y termina a las ' + INFO.endLabel + '.');
+    setState('', '🎥', 'Activa la grabación de tu room', 'Empieza sola a las ' + INFO.startLabel + ' y termina a las ' + dot(INFO.endLabel));
     show('how', !prob); show('arm', !prob);
     if (prob) { showErr(prob); show('skip', true); if (INFO.link) show('zoom', true); }
     loop();
@@ -199,7 +200,7 @@
     if (S.state !== 'grabando') return;
     const sec = Math.floor((Date.now() - S.recAt) / 1000);
     setState('rec', '●', 'Grabando tu room · ' + String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0'),
-      'Termina sola a las ' + INFO.endLabel + '. ' + S.ok + ' partes guardadas' + (S.bad ? ', ' + S.bad + ' con error' : '') + '.');
+      'Termina sola a las ' + dot(INFO.endLabel) + ' ' + S.ok + ' partes guardadas' + (S.bad ? ', ' + S.bad + ' con error' : '') + '.');
     $('title').classList.add('clock');
     setTimeout(clock, 1000);
   }

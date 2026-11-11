@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Grabador de BO Room · Mi Espacio Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root { --navy: #132A52; --gold: #C9A227; --paper: #F3F5F9; --ink: #1B2333; --muted: #5C6578; --line: #DCE1EA; --ok: #2E7D5B; --late: #B3261E; --card: #fff; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #0F1A30; --ink: #E8ECF4; --muted: #A3ADC2; --line: #2A3A5C; --card: #172645; --ok: #5CC495; --late: #F0857D; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  header { background: #132A52; color: #fff; padding: calc(22px + env(safe-area-inset-top, 0px)) 20px 18px; border-bottom: 4px solid var(--gold); }
+  header .wrap, main { max-width: 520px; margin: 0 auto; }
+  header small { color: var(--gold); font-weight: 600; font-size: 13px; }
+  header h1 { margin: 2px 0 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+  main { padding: 22px 20px calc(48px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 14px; }
+  .who { font-size: 15px; color: var(--muted); }
+  .who strong { color: var(--ink); font-size: 20px; display: block; }
+  .state { display: grid; grid-template-columns: 64px 1fr; gap: 14px; align-items: center; background: var(--card); border: 2px solid var(--line); border-radius: 14px; padding: 16px; }
+  .dot { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; font-size: 28px; background: var(--paper); border: 3px solid var(--line); }
+  .state.rec { border-color: var(--late); }
+  .state.rec .dot { border-color: var(--late); background: var(--late); color: #fff; }
+  @media (prefers-reduced-motion: no-preference) { .state.rec .dot { animation: pulse 1.6s ease-in-out infinite; } @keyframes pulse { 50% { box-shadow: 0 0 0 10px rgba(179,38,30,.15); } } }
+  .state.ready { border-color: var(--gold); }
+  .state.done { border-color: var(--ok); }
+  .state.done .dot { border-color: var(--ok); color: var(--ok); }
+  .state h2 { margin: 0; font-size: 19px; font-weight: 800; color: var(--ink); }
+  .state p { margin: 2px 0 0; color: var(--muted); font-size: 15px; }
+  .clock { font-variant-numeric: tabular-nums; }
+  button, .zoom { width: 100%; font: inherit; font-weight: 800; font-size: 17px; padding: 15px; border-radius: 10px; cursor: pointer; text-align: center; text-decoration: none; display: block; }
+  .go { border: 0; background: var(--gold); color: #132A52; }
+  .zoom { border: 2px solid var(--navy); background: #fff; color: #132A52; }
+  .ghost { border: 1.5px solid var(--line); background: transparent; color: var(--ink); font-size: 15px; font-weight: 600; padding: 12px; }
+  button:disabled { opacity: .55; cursor: default; }
+  button:focus-visible, .zoom:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  ol { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+  .how { background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .how strong { display: block; margin-bottom: 6px; }
+  .err { color: var(--late); font-weight: 600; }
+  .small { font-size: 13px; color: var(--muted); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header><div class="wrap"><small>Mi Espacio Demo</small><h1>Grabador de BO Room</h1></div></header>
+<main>
+  <div class="who" id="who">Cargando…</div>
+  <div class="state" id="state"><div class="dot" id="dot">⏳</div><div><h2 id="title">Cargando…</h2><p id="sub"></p></div></div>
+  <div class="how hidden" id="how">
+    <strong>Al tocar el botón:</strong>
+    <ol>
+      <li>Elige <b>Pantalla completa</b> (no una ventana ni una pestaña).</li>
+      <li>Activa <b>Compartir también el audio del sistema</b>.</li>
+      <li>Toca <b>Compartir</b> y permite el <b>micrófono</b>.</li>
+    </ol>
+  </div>
+  <button class="go hidden" id="arm" type="button">🎥 Compartir pantalla y activar grabación</button>
+  <a class="zoom hidden" id="zoom" target="_blank" rel="noopener">Abrir Zoom</a>
+  <p class="small hidden" id="keep">Deja esta pestaña abierta (puedes minimizarla) hasta que diga "Grabación guardada". Usa audífonos para que no haya eco.</p>
+  <p class="err hidden" id="err"></p>
+  <button class="go hidden" id="retry" type="button">Intentar otra vez</button>
+  <button class="ghost hidden" id="skip" type="button">Entrar sin grabar (queda registrado)</button>
+</main>
+<script>
+  const P = new URLSearchParams(location.search), T = P.get('t') || '', API = P.get('api') || '';
+  const BLOQUE = 256 * 1024, UMBRAL = 1536 * 1024;
+  const $ = id => document.getElementById(id);
+  const show = (id, on) => $(id).classList.toggle('hidden', !on);
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  let INFO = null, S = { state: 'abierta' }, lastErr = '';
+
+  async function api(a, extra) {
+    const r = await fetch(API, { method: 'POST', body: JSON.stringify(Object.assign({ grb: 1, a: a, t: T }, extra || {})) });
+    const j = await r.json();
+    if (j && j.error) throw new Error(j.error);
+    return j;
+  }
+  function setState(cls, dot, title, sub) {
+    $('state').className = 'state ' + (cls || ''); $('dot').textContent = dot; $('title').textContent = title; $('sub').textContent = sub || '';
+  }
+  function showErr(t) { lastErr = t || ''; $('err').textContent = lastErr; show('err', !!t); }
+
+  async function init() {
+    if (!T || !API) { setState('', '⚠', 'Este enlace no sirve', 'Abre el grabador desde Mi Espacio Demo.'); $('who').textContent = ''; return; }
+    try { INFO = await api('info'); }
+    catch (e) { setState('', '⚠', 'No se pudo abrir el grabador', e.message); $('who').textContent = ''; return; }
+    S.off = INFO.nowMs - Date.now();
+    $('who').innerHTML = ''; const b = document.createElement('strong'); b.textContent = INFO.who;
+    $('who').append(b, document.createTextNode((INFO.role === 'Lead' ? 'Lead' : 'BO Room') + ' · ' + INFO.label));
+    if (INFO.link) $('zoom').href = INFO.link;
+    if (INFO.armed) {
+      setState('', '⚠', 'Esta grabación ya estaba activa en otra pestaña', 'Si la cerraste, vuelve a Mi Espacio Demo y toca otra vez "Activar grabación de mi room".');
+      return;
+    }
+    const prob = browserProblem();
+    setState('', '🎥', 'Activa la grabación de tu room', 'Empieza sola a las ' + INFO.startLabel + ' y termina a las ' + INFO.endLabel + '.');
+    show('how', !prob); show('arm', !prob);
+    if (prob) { showErr(prob); show('skip', true); if (INFO.link) show('zoom', true); }
+    loop();
+  }
+
+  function browserProblem() {
+    const ua = navigator.userAgent;
+    if (/Mobi|Android|iPhone|iPad/i.test(ua)) return 'Desde el celular no se puede grabar el room. Entra a Mi Espacio Demo desde una computadora con Chrome o Edge.';
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia || !window.MediaRecorder) return 'Este navegador no puede grabar la pantalla. Usa Chrome o Edge.';
+    if (/Firefox/i.test(ua)) return 'Firefox no graba el audio de Zoom. Usa Chrome o Edge.';
+    if (/Safari/i.test(ua) && !/Chrome|Chromium|Edg/i.test(ua)) return 'Safari no graba el audio de Zoom. Usa Chrome.';
+    return '';
+  }
+  const tracksOff = () => { [S.screen, S.mic].forEach(x => x && x.getTracks().forEach(t => t.stop())); if (S.ctx) S.ctx.close().catch(() => {}); };
+
+  // 1) Compartir pantalla, audio del sistema y micrófono
+  $('arm').onclick = $('retry').onclick = async () => {
+    showErr(''); show('retry', false); show('skip', false);
+    let screen, mic;
+    try {
+      screen = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 5, max: 8 }, width: { max: 1280 }, height: { max: 720 } },
+        audio: true, systemAudio: 'include', monitorTypeSurfaces: 'include', selfBrowserSurface: 'exclude', surfaceSwitching: 'exclude'
+      });
+    } catch (e) { return armFail(e && e.name === 'NotAllowedError' ? 'No se dio permiso para compartir la pantalla.' : 'No se pudo compartir la pantalla (' + (e && e.message) + ').'); }
+    const v = screen.getVideoTracks()[0], surf = v.getSettings().displaySurface;
+    const stop = () => [screen, mic].forEach(x => x && x.getTracks().forEach(t => t.stop()));
+    if (surf && surf !== 'monitor') { stop(); return armFail('Elegiste una ventana o una pestaña. Tienes que elegir "Pantalla completa".'); }
+    const mac = /Mac/i.test(navigator.platform || navigator.userAgent), noSys = !screen.getAudioTracks().length;
+    if (noSys && !mac) { stop(); return armFail('Falta el audio de Zoom: vuelve a intentarlo y activa "Compartir también el audio del sistema".'); }
+    try { mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+    catch (e) { stop(); return armFail('Falta el permiso del micrófono. Permítelo y vuelve a intentarlo.'); }
+    try { await api('armed', { noSys: noSys }); }
+    catch (e) { stop(); return armFail('No se pudo activar la grabación: ' + e.message); }
+    Object.assign(S, { screen: screen, mic: mic, noSys: noSys, state: 'lista', ok: 0, bad: 0 });
+    v.onended = () => stopRec('detenida');
+    show('how', false); show('arm', false); show('keep', true);
+    if (INFO.link) show('zoom', true);
+    setState('ready', '✓', 'Grabación lista', 'Empieza sola a las ' + INFO.startLabel + ' (inicio del BO).' + (INFO.link ? ' Ahora abre Zoom.' : ' Ahora abre tu clase con tu link de demo.') +
+      (noSys ? ' Sin audio de Zoom (Mac): se graba pantalla y micrófono.' : ''));
+    tick();
+  };
+  function armFail(t) { showErr(t); show('retry', true); show('skip', true); }
+  $('skip').onclick = async () => {
+    $('skip').disabled = true;
+    try { await api('skip', { motivo: lastErr || 'Eligió entrar sin grabar' }); } catch (e) {}
+    S.state = 'fin'; show('arm', false); show('how', false); show('retry', false); show('skip', false); showErr('');
+    setState('', '⏭', 'Entraste sin grabar', 'Quedó registrado.' + (INFO.link ? ' Abre Zoom con el botón.' : ''));
+    if (INFO.link) show('zoom', true);
+  };
+
+  // Revisa cada 15 s: señal de vida, si el lead abrió o cerró los rooms, y la hora.
+  async function loop() {
+    while (S.state === 'abierta' || S.state === 'lista' || S.state === 'grabando') {
+      let f = {};
+      try { f = await api('poll') || {}; } catch (e) {}
+      if (f.closed && S.state !== 'fin') {
+        if (S.rec && S.rec.state !== 'inactive') { S.rec.onstop = null; try { S.rec.stop(); } catch (e) {} }
+        tracksOff(); S.state = 'fin'; show('arm', false); show('how', false);
+        setState('', '⚠', 'La grabación se cerró', 'La página estuvo sin conexión o se cerró desde otra pestaña. Avísale a Andrea.');
+        return;
+      }
+      const now = Date.now() + S.off;
+      if (S.state === 'lista' && (now >= INFO.startMs || f.open)) startRec();
+      if (S.state === 'grabando' && (now >= INFO.endMs || f.close)) { stopRec(f.close ? 'lead' : 'completa'); return; }
+      await wait(15000);
+    }
+  }
+
+  function startRec() {
+    try {
+      S.ctx = new AudioContext(); S.ctx.resume().catch(() => {});
+      const dest = S.ctx.createMediaStreamDestination();
+      if (S.screen.getAudioTracks().length) S.ctx.createMediaStreamSource(new MediaStream(S.screen.getAudioTracks())).connect(dest);
+      S.ctx.createMediaStreamSource(S.mic).connect(dest);
+      const mix = new MediaStream([S.screen.getVideoTracks()[0], ...dest.stream.getAudioTracks()]);
+      const tipo = ['video/webm;codecs=vp8,opus', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
+      S.rec = new MediaRecorder(mix, { mimeType: tipo, videoBitsPerSecond: 250000, audioBitsPerSecond: 48000 });
+    } catch (e) {
+      tracksOff(); S.state = 'fin'; api('finish', { motivo: 'detenida' }).catch(() => {});
+      setState('', '⚠', 'No se pudo empezar a grabar', e.message + '. Avísale a Andrea.'); return;
+    }
+    S.pend = new Blob([]); S.idx = 0; S.queue = Promise.resolve();
+    S.rec.ondataavailable = e => { if (e.data && e.data.size) { S.pend = new Blob([S.pend, e.data]); if (S.pend.size >= UMBRAL) send(false); } };
+    S.rec.onstop = () => {
+      send(true); tracksOff();
+      // Espera unos segundos al azar para que no se junten al mismo tiempo todos los rooms de la clase.
+      S.queue = S.queue.then(() => wait(Math.floor(Math.random() * 45000))).then(() => api('finish', { motivo: S.motivo || 'completa' }))
+        .then(r => { S.state = 'fin'; show('keep', false);
+          setState(r && r.ok ? 'done' : '', r && r.ok ? '✓' : '⚠', r && r.ok ? 'Grabación guardada' : 'No se guardó el video', r && r.ok ? 'Ya puedes cerrar esta pestaña. ¡Gracias!' : 'Avísale a Andrea.'); })
+        .catch(e => { S.state = 'fin'; setState('', '⚠', 'No se pudo guardar el video', e.message + '. Avísale a Andrea.'); });
+    };
+    S.rec.start(10000);
+    S.state = 'grabando'; S.recAt = Date.now();
+    api('started').catch(() => {});
+    clock();
+  }
+  function clock() {
+    if (S.state !== 'grabando') return;
+    const sec = Math.floor((Date.now() - S.recAt) / 1000);
+    setState('rec', '●', 'Grabando tu room · ' + String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0'),
+      'Termina sola a las ' + INFO.endLabel + '. ' + S.ok + ' partes guardadas' + (S.bad ? ', ' + S.bad + ' con error' : '') + '.');
+    $('title').classList.add('clock');
+    setTimeout(clock, 1000);
+  }
+  function send(final) {
+    const n = final ? S.pend.size : Math.floor(S.pend.size / BLOQUE) * BLOQUE;
+    if (!n) return;
+    const trozo = S.pend.slice(0, n), i = S.idx++;
+    S.pend = S.pend.slice(n);
+    S.queue = S.queue.then(async () => {
+      const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.onerror = rej; fr.readAsDataURL(trozo); });
+      for (let k = 1; k <= 3; k++) {
+        try { await api('chunk', { i: i, b64: b64 }); S.ok++; return; }
+        catch (e) { if (k === 3) { S.bad++; return; } await wait(3000 * k); }
+      }
+    });
+  }
+  function stopRec(motivo) {
+    if (S.state !== 'lista' && S.state !== 'grabando') return;
+    S.motivo = motivo;
+    const was = S.state === 'grabando';
+    S.state = 'guardando';
+    setState('', '⏳', 'Guardando el video…', 'No cierres esta pestaña hasta que diga "Grabación guardada".');
+    if (was) { try { S.rec.stop(); } catch (e) { tracksOff(); } return; }
+    tracksOff();
+    api('finish', { motivo: motivo }).catch(() => {}).then(() => {
+      S.state = 'fin'; show('keep', false);
+      setState('', '⚠', 'Tu room no se grabó', 'Dejaste de compartir la pantalla antes del BO. Vuelve a Mi Espacio Demo y toca "Activar grabación de mi room".');
+    });
+  }
+  window.addEventListener('beforeunload', e => { if (['lista', 'grabando', 'guardando'].indexOf(S.state) >= 0) { e.preventDefault(); e.returnValue = ''; } });
+  init();
+</script>
+</body>
+</html>

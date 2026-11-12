@@ -212,7 +212,6 @@
     if (INFO.link) show('zoom', true);
     setState('ready', '✓', 'Grabación lista', 'Empieza sola a las ' + INFO.startLabel + ' (inicio del BO).' + (INFO.link ? ' Ahora abre Zoom.' : ' Ahora abre tu clase con tu link de demo.') +
       (noSys ? ' Sin audio de Zoom (Mac): se graba pantalla y micrófono.' : ''));
-    tick();
   };
   function armFail(t) { showErr(t); show('retry', true); show('skip', true); }
   // Parar la grabación (emergencia): pide el motivo, que queda en el registro y en el resumen de Andrea.

@@ -42,12 +42,28 @@
   .how strong { display: block; margin-bottom: 6px; }
   .err { color: var(--late); font-weight: 600; }
   .small { font-size: 13px; color: var(--muted); }
+  select, input[type=password] { width: 100%; font: inherit; padding: 12px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); }
+  label.f { display: grid; gap: 4px; font-weight: 600; font-size: 15px; }
+  .cls { text-align: left; font-size: 16px; font-weight: 600; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); }
+  .cls.mine { border: 2px solid var(--gold); font-weight: 800; }
+  textarea { width: 100%; font: inherit; padding: 12px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); resize: vertical; }
+  textarea:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  .stop { border: 0; background: var(--late); color: #fff; }
+  .em { border-color: var(--late); display: grid; gap: 8px; }
   .hidden { display: none !important; }
 </style>
 </head>
 <body>
 <header><div class="wrap"><small>Mi Espacio Demo</small><h1>Grabador de BO Room</h1></div></header>
 <main>
+  <div class="how em hidden" id="emStart" style="border-color:var(--gold)">
+    <strong>Grabación de emergencia</strong>
+    <p class="small" style="margin:0">Úsala solo si no pudiste activar la grabación desde Mi Espacio Demo. Queda registrado que la activaste desde aquí. Esto no marca tu entrada: márcala también en Mi Espacio Demo.</p>
+    <label class="f">Tu nombre<select id="emName"><option value="">Cargando…</option></select></label>
+    <label class="f">Tu PIN<input id="emPin" type="password" inputmode="numeric" autocomplete="off"></label>
+    <button class="go" id="emLoad" type="button">Ver mis clases de hoy</button>
+    <div id="emList" style="display:grid;gap:8px"></div>
+  </div>
   <div class="who" id="who">Cargando…</div>
   <div class="state" id="state"><div class="dot" id="dot">⏳</div><div><h2 id="title">Cargando…</h2><p id="sub"></p></div></div>
   <div class="how hidden" id="how">
@@ -64,9 +80,21 @@
   <p class="err hidden" id="err"></p>
   <button class="go hidden" id="retry" type="button">Intentar otra vez</button>
   <button class="ghost hidden" id="skip" type="button">Entrar sin grabar (queda registrado)</button>
+  <button class="ghost hidden" id="stopEm" type="button">⏹ Parar grabación (emergencia)</button>
+  <div class="how em hidden" id="emBox">
+    <strong>⚠ ¿Seguro que quieres parar la grabación?</strong>
+    <p class="small" style="margin:0">Andrea será notificada. Explica en detalle por qué necesitas parar la grabación.</p>
+    <textarea id="emWhy" rows="4" placeholder="Ej.: los BO rooms terminaron a las 4:30 p. m. y la lead no los cerró; ya estoy fuera del room."></textarea>
+    <p class="small" id="emCount" style="margin:0"></p>
+    <button class="go stop" id="emGo" type="button" disabled>Parar grabación</button>
+    <button class="ghost" id="emCancel" type="button">Seguir grabando</button>
+  </div>
 </main>
 <script>
-  const P = new URLSearchParams(location.search), T = P.get('t') || '', API = P.get('api') || '';
+  // Dirección de Mi Espacio Demo (la de /exec). Con ella, este mismo enlace sin código sirve como grabación de emergencia.
+  const DEFAULT_API = 'https://script.google.com/macros/s/AKfycbxQqz-yEALc3jS2V7grF2FNyJdOTpYbKrhFXegmhB-Ix7ivYq0VLIvfv_f-9sQ7S1TnNQ/exec';
+  const P = new URLSearchParams(location.search), API = P.get('api') || DEFAULT_API;
+  let T = P.get('t') || '';
   const BLOQUE = 256 * 1024, UMBRAL = 1536 * 1024;
   const $ = id => document.getElementById(id);
   const show = (id, on) => $(id).classList.toggle('hidden', !on);
@@ -86,7 +114,7 @@
   function showErr(t) { lastErr = t || ''; $('err').textContent = lastErr; show('err', !!t); }
 
   async function init() {
-    if (!T || !API) { setState('', '⚠', 'Este enlace no sirve', 'Abre el grabador desde Mi Espacio Demo.'); $('who').textContent = ''; return; }
+    if (!T) { emergencyStart(); return; }
     try { INFO = await api('info'); }
     catch (e) { setState('', '⚠', 'No se pudo abrir el grabador', e.message); $('who').textContent = ''; return; }
     S.off = INFO.nowMs - Date.now();
@@ -103,6 +131,42 @@
     if (prob) { showErr(prob); show('skip', true); if (INFO.link) show('zoom', true); }
     loop();
   }
+
+  // ---------- Grabación de emergencia: nombre, PIN y clase ----------
+  async function emergencyStart() {
+    show('who', false); show('state', false); show('emStart', true);
+    try {
+      const r = await api('emNames');
+      $('emName').replaceChildren(new Option('Elige tu nombre', ''), ...r.names.map(x => new Option(x.t, x.v)));
+    } catch (e) { $('emName').replaceChildren(new Option('No se pudo cargar la lista', '')); showErr(e.message); }
+  }
+  $('emPin').onkeydown = e => { if (e.key === 'Enter') $('emLoad').click(); };
+  $('emLoad').onclick = async () => {
+    const name = $('emName').value, pin = $('emPin').value.trim();
+    if (!name) { showErr('Elige tu nombre.'); return; }
+    if (!pin) { showErr('Escribe tu PIN.'); return; }
+    showErr(''); $('emLoad').disabled = true; $('emList').textContent = 'Buscando tus clases…';
+    let r;
+    try { r = await api('emClasses', { name: name, pin: pin }); }
+    catch (e) { $('emLoad').disabled = false; $('emList').textContent = ''; showErr(e.message); return; }
+    $('emLoad').disabled = false;
+    const box = $('emList'); box.replaceChildren();
+    const btn = (c, mine) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'cls' + (mine ? ' mine' : ''); b.textContent = c.t;
+      b.onclick = async () => {
+        box.querySelectorAll('button').forEach(x => { x.disabled = true; }); showErr('');
+        try {
+          const o = await api('emOpen', { name: name, pin: pin, kind: c.kind, row: c.row, start: c.start, lob: c.lob });
+          T = o.t; show('emStart', false); show('who', true); show('state', true); init();
+        } catch (e) { box.querySelectorAll('button').forEach(x => { x.disabled = false; }); showErr(e.message); }
+      };
+      return b;
+    };
+    const p = t => { const x = document.createElement('p'); x.className = 'small'; x.style.margin = '6px 0 0'; x.textContent = t; return x; };
+    if (r.mine.length) { box.append(p('Tus clases de hoy:')); r.mine.forEach(c => box.append(btn(c, true))); }
+    else box.append(p('Hoy no tienes clases con el BO pendiente.'));
+    if (r.others.length) { box.append(p('¿Estás apoyando en otra clase? Elígela aquí:')); r.others.forEach(c => box.append(btn(c, false))); }
+  };
 
   function browserProblem() {
     const ua = navigator.userAgent;
@@ -136,12 +200,29 @@
     Object.assign(S, { screen: screen, mic: mic, noSys: noSys, state: 'lista', ok: 0, bad: 0 });
     v.onended = () => stopRec('detenida');
     show('how', false); show('arm', false); show('keep', true);
+    show('stopEm', true);
     if (INFO.link) show('zoom', true);
     setState('ready', '✓', 'Grabación lista', 'Empieza sola a las ' + INFO.startLabel + ' (inicio del BO).' + (INFO.link ? ' Ahora abre Zoom.' : ' Ahora abre tu clase con tu link de demo.') +
       (noSys ? ' Sin audio de Zoom (Mac): se graba pantalla y micrófono.' : ''));
     tick();
   };
   function armFail(t) { showErr(t); show('retry', true); show('skip', true); }
+  // Parar la grabación (emergencia): pide el motivo, que queda en el registro y en el resumen de Andrea.
+  const EM_MIN = 30;
+  $('stopEm').onclick = () => { show('stopEm', false); show('emBox', true); $('emWhy').focus(); };
+  $('emCancel').onclick = () => { show('emBox', false); show('stopEm', S.state === 'lista' || S.state === 'grabando'); };
+  $('emWhy').oninput = () => {
+    const n = $('emWhy').value.trim().length;
+    $('emCount').textContent = n >= EM_MIN ? '✓ ' + n + ' caracteres' : n + ' de ' + EM_MIN + ' caracteres mínimo';
+    $('emGo').disabled = n < EM_MIN;
+  };
+  $('emWhy').oninput();
+  $('emGo').onclick = () => {
+    if ($('emWhy').value.trim().length < EM_MIN) return;
+    S.nota = 'Paró la grabación (emergencia): ' + $('emWhy').value.trim();
+    show('emBox', false);
+    stopRec('emergencia');
+  };
   $('skip').onclick = async () => {
     $('skip').disabled = true;
     try { await api('skip', { motivo: lastErr || 'Eligió entrar sin grabar' }); } catch (e) {}
@@ -157,7 +238,7 @@
       try { f = await api('poll') || {}; } catch (e) {}
       if (f.closed && S.state !== 'fin') {
         if (S.rec && S.rec.state !== 'inactive') { S.rec.onstop = null; try { S.rec.stop(); } catch (e) {} }
-        tracksOff(); S.state = 'fin'; show('arm', false); show('how', false);
+        tracksOff(); S.state = 'fin'; show('arm', false); show('how', false); show('stopEm', false); show('emBox', false);
         setState('', '⚠', 'La grabación se cerró', 'La página estuvo sin conexión o se cerró desde otra pestaña. Avísale a Andrea.');
         return;
       }
@@ -186,9 +267,9 @@
     S.rec.onstop = () => {
       send(true); tracksOff();
       // Espera unos segundos al azar para que no se junten al mismo tiempo todos los rooms de la clase.
-      S.queue = S.queue.then(() => wait(Math.floor(Math.random() * 45000))).then(() => api('finish', { motivo: S.motivo || 'completa' }))
+      S.queue = S.queue.then(() => wait(Math.floor(Math.random() * 45000))).then(() => api('finish', { motivo: S.motivo || 'completa', nota: S.nota || '' }))
         .then(r => { S.state = 'fin'; show('keep', false);
-          setState(r && r.ok ? 'done' : '', r && r.ok ? '✓' : '⚠', r && r.ok ? 'Grabación guardada' : 'No se guardó el video', r && r.ok ? 'Ya puedes cerrar esta pestaña. ¡Gracias!' : 'Avísale a Andrea.'); })
+          setState(r && r.ok ? 'done' : '', r && r.ok ? '✓' : '⚠', r && r.ok ? (S.motivo === 'emergencia' ? 'Grabación detenida y guardada' : 'Grabación guardada') : 'No se guardó el video', r && r.ok ? 'Ya puedes cerrar esta pestaña. ¡Gracias!' : 'Avísale a Andrea.'); })
         .catch(e => { S.state = 'fin'; setState('', '⚠', 'No se pudo guardar el video', e.message + '. Avísale a Andrea.'); });
     };
     S.rec.start(10000);
@@ -220,14 +301,16 @@
   function stopRec(motivo) {
     if (S.state !== 'lista' && S.state !== 'grabando') return;
     S.motivo = motivo;
+    show('stopEm', false); show('emBox', false);
     const was = S.state === 'grabando';
     S.state = 'guardando';
     setState('', '⏳', 'Guardando el video…', 'No cierres esta pestaña hasta que diga "Grabación guardada".');
     if (was) { try { S.rec.stop(); } catch (e) { tracksOff(); } return; }
     tracksOff();
-    api('finish', { motivo: motivo }).catch(() => {}).then(() => {
+    api('finish', { motivo: motivo, nota: S.nota || '' }).catch(() => {}).then(() => {
       S.state = 'fin'; show('keep', false);
-      setState('', '⚠', 'Tu room no se grabó', 'Dejaste de compartir la pantalla antes del BO. Vuelve a Mi Espacio Demo y toca "Activar grabación de mi room".');
+      if (motivo === 'emergencia') setState('', '⏹', 'Grabación detenida', 'Quedó registrado tu motivo. Ya puedes cerrar esta pestaña.');
+      else setState('', '⚠', 'Tu room no se grabó', 'Dejaste de compartir la pantalla antes del BO. Vuelve a Mi Espacio Demo y toca "Activar grabación de mi room".');
     });
   }
   window.addEventListener('beforeunload', e => { if (['lista', 'grabando', 'guardando'].indexOf(S.state) >= 0) { e.preventDefault(); e.returnValue = ''; } });

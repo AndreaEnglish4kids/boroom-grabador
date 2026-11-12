@@ -117,6 +117,14 @@
     if (!T) { emergencyStart(); return; }
     try { INFO = await api('info'); }
     catch (e) { setState('', '⚠', 'No se pudo abrir el grabador', e.message); $('who').textContent = ''; return; }
+    if (INFO.done) {   // la grabación ya terminó antes (por ejemplo, recargaron esta pestaña)
+      $('who').innerHTML = ''; const w = document.createElement('strong'); w.textContent = INFO.who;
+      $('who').append(w, document.createTextNode((INFO.role === 'Lead' ? 'Lead' : 'BO Room') + ' · ' + INFO.label));
+      const ok = /^Completa/.test(INFO.st);
+      setState(ok ? 'done' : '', ok ? '✓' : 'ℹ', ok ? 'Esta grabación ya está guardada' : 'Esta grabación ya terminó',
+        (ok ? 'Tu room quedó grabado' : 'Quedó como: ' + INFO.st) + (INFO.fin ? ' (terminó a las ' + INFO.fin + ').' : '.') + ' Ya puedes cerrar esta pestaña.');
+      S.state = 'fin'; return;
+    }
     S.off = INFO.nowMs - Date.now();
     $('who').innerHTML = ''; const b = document.createElement('strong'); b.textContent = INFO.who;
     $('who').append(b, document.createTextNode((INFO.role === 'Lead' ? 'Lead' : 'BO Room') + ' · ' + INFO.label));

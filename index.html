@@ -277,12 +277,21 @@
       S.queue = S.queue.then(() => wait(Math.floor(Math.random() * 45000))).then(() => api('finish', { motivo: S.motivo || 'completa', nota: S.nota || '' }))
         .then(r => { S.state = 'fin'; show('keep', false);
           setState(r && r.ok ? 'done' : '', r && r.ok ? '✓' : '⚠', r && r.ok ? (S.motivo === 'emergencia' ? 'Grabación detenida y guardada' : 'Grabación guardada') : 'No se guardó el video', r && r.ok ? 'Ya puedes cerrar esta pestaña. ¡Gracias!' : 'Avísale a Andrea.'); })
-        .catch(e => { S.state = 'fin'; setState('', '⚠', 'No se pudo guardar el video', e.message + '. Avísale a Andrea.'); });
+        .catch(e => { S.state = 'fin'; show('keep', false); cutOff(); });
     };
     S.rec.start(10000);
     S.state = 'grabando'; S.recAt = Date.now();
     api('started').catch(() => {});
     clock();
+  }
+  // Se cortó la conexión al terminar: las partes ya están en Drive y el sistema une el video solo.
+  function cutOff() {
+    const hora = S.lastOk ? new Intl.DateTimeFormat('es-SV', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/El_Salvador' })
+      .format(new Date(S.lastOk + (S.off || 0))).replace(/\s+/g, ' ') : '';
+    if (!S.ok) { setState('', '⚠', 'Tu conexión se interrumpió', 'No se alcanzó a guardar ninguna parte del video. Avísale a Andrea.'); return; }
+    setState('done', '✓', 'Tu video quedó guardado por partes',
+      'Tu conexión se interrumpió al terminar, pero tu room quedó grabado' + (hora ? ' hasta las ' + dot(hora) : '.') +
+      ' El sistema une el video solo y queda registrado para Andrea. No necesitas hacer nada; ya puedes cerrar esta pestaña.');
   }
   function clock() {
     if (S.state !== 'grabando') return;
@@ -300,7 +309,7 @@
     S.queue = S.queue.then(async () => {
       const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.onerror = rej; fr.readAsDataURL(trozo); });
       for (let k = 1; k <= 3; k++) {
-        try { await api('chunk', { i: i, b64: b64 }); S.ok++; return; }
+        try { await api('chunk', { i: i, b64: b64 }); S.ok++; S.lastOk = Date.now(); return; }
         catch (e) { if (k === 3) { S.bad++; return; } await wait(3000 * k); }
       }
     });

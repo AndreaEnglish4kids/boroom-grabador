@@ -269,7 +269,7 @@
       const now = Date.now() + S.off;
       if (S.state === 'lista' && (now >= INFO.startMs || f.open)) startRec();
       if (S.state === 'grabando' && (now >= INFO.endMs || f.close)) { stopRec(f.close ? 'lead' : 'completa'); return; }
-      await wait(15000);
+      await wait(30000);
     }
   }
 

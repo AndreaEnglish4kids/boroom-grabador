@@ -126,11 +126,11 @@
     for (let k = 1; ; k++) {
       try { INFO = await api('info', null, 20000); break; }
       catch (e) {
-        if (k >= 5 || /ya no sirve|no válida/.test(e.message)) {
+        if (k >= 8 || /ya no sirve|no válida/.test(e.message)) {
           setState('', '⚠', 'No se pudo abrir el grabador', e.message + '. Recarga esta página (F5). Si sigue igual, entra a Zoom y avísale a Andrea.');
           $('who').textContent = ''; return;
         }
-        setState('', '⏳', 'Conectando…', e.message + '. Intento ' + (k + 1) + ' de 5.');
+        setState('', '⏳', 'Conectando…', e.message + '. Intento ' + (k + 1) + ' de 8.');
         await wait(4000 * k);
       }
     }

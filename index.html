@@ -122,7 +122,7 @@
 
   async function init() {
     if (!T) { emergencyStart(); return; }
-    // Si no carga, vuelve a intentar hasta 5 veces en vez de quedarse en "Cargando…".
+    // Si no carga, vuelve a intentar hasta 8 veces en vez de quedarse en "Cargando…".
     for (let k = 1; ; k++) {
       try { INFO = await api('info', null, 20000); break; }
       catch (e) {

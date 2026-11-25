@@ -292,7 +292,7 @@
       send(true); tracksOff();
       // Espera unos segundos al azar para que no se junten al mismo tiempo todos los rooms de la clase.
       // "finish" puede tardar varios minutos (junta las partes del video), así que tiene hasta 5 minutos y medio.
-      S.queue = S.queue.then(() => wait(Math.floor(Math.random() * 90000))).then(() => api('finish', { motivo: S.motivo || 'completa', nota: S.nota || '' }, 330000))
+      S.queue = S.queue.then(() => wait(Math.floor(Math.random() * 90000))).then(() => finishQ())
         .then(r => { if (S.state === 'fin') return; S.state = 'fin'; show('keep', false);
           setState(r && r.ok ? 'done' : '', r && r.ok ? '✓' : '⚠', r && r.ok ? (S.motivo === 'emergencia' ? 'Grabación detenida y guardada' : 'Grabación guardada') : 'No se guardó el video', r && r.ok ? 'Ya puedes cerrar esta pestaña. ¡Gracias!' : 'Avísale a Andrea.'); })
         .catch(e => { if (S.state === 'fin') return; S.state = 'fin'; show('keep', false); cutOff(); });
@@ -301,6 +301,15 @@
     S.state = 'grabando'; S.recAt = Date.now();
     api('started').catch(() => {});
     clock();
+  }
+    // Guarda el video; si hay varios guardándose a la vez, espera su turno y vuelve a intentar solo.
+  async function finishQ() {
+    for (;;) {
+      const r = await api('finish', { motivo: S.motivo || 'completa', nota: S.nota || '', finMs: S.stopAt }, 330000);
+      if (!r || !r.busy) return r;
+      if (S.state !== 'fin') setState('', '⏳', 'En fila para guardar…', 'Hay varios rooms guardándose al mismo tiempo. Tu video ya está a salvo y se guarda en unos minutos. No cierres esta pestaña.');
+      await wait(r.retryMs || 20000);
+    }
   }
   // Se cortó la conexión al terminar: las partes ya están en Drive y el sistema une el video solo.
   function cutOff() {
@@ -334,7 +343,7 @@
   }
   function stopRec(motivo) {
     if (S.state !== 'lista' && S.state !== 'grabando') return;
-    S.motivo = motivo;
+    S.motivo = motivo; S.stopAt = Date.now() + (S.off || 0);
     show('stopEm', false); show('emBox', false);
     const was = S.state === 'grabando';
     S.state = 'guardando';
